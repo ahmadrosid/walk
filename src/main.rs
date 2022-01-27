@@ -11,28 +11,12 @@ fn main() {
         .arg(arg!(-f --file "Only walk files"))
         .get_matches();
 
-    let mut dir = ".";
-    let mut is_file = true;
-    let mut is_dir = false;
-    if let Some(val) = matches.value_of("path") {
-        dir = val;
-    }
-
-    if matches.is_present("file") {
-        is_file = true;
-        is_dir = false;
-    }
+    let dir = match matches.value_of("path") {
+        Some(val) => val,
+        _ => ".",
+    };
 
     if matches.is_present("dir") {
-        is_file = false;
-        is_dir = true;
-    }
-
-    println!("Path: {:?}", dir);
-    println!("Is dir: {:?}", is_dir);
-    println!("Is file: {:?}", is_file);
-
-    if is_dir {
         WalkDir::new(dir)
             .into_iter()
             .filter_entry(|e| !is_hidden(e))
@@ -41,14 +25,22 @@ fn main() {
             .for_each(|entry| println!("{}", entry.path().display()));
     }
 
-    if is_file {
-        WalkDir::new(dir)
-            .into_iter()
-            .filter_entry(|e| !is_hidden(e))
-            .filter_map(|v| v.ok())
-            .filter(|item| item.path().is_file())
-            .for_each(|entry| println!("{}", entry.path().display()));
+    if matches.is_present("file") {
+        walk_file(dir);
     }
+
+    // If option not present walk file as default!
+    walk_file(dir);
+}
+
+fn walk_file(dir: &str) {
+    WalkDir::new(dir)
+        .into_iter()
+        .filter_entry(|e| !is_hidden(e))
+        .filter_map(|v| v.ok())
+        .filter(|item| item.path().is_file())
+        .for_each(|entry| println!("{}", entry.path().display()));
+    std::process::exit(0);
 }
 
 fn is_hidden(entry: &DirEntry) -> bool {
