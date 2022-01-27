@@ -14,7 +14,7 @@ fn main() {
     let mut dir = ".";
     let mut is_file = true;
     let mut is_dir = false;
-    if let Some(val) = matches.value_of("dir") {
+    if let Some(val) = matches.value_of("path") {
         dir = val;
     }
 
