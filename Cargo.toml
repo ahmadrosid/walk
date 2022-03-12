@@ -7,4 +7,6 @@ edition = "2021"
 
 [dependencies]
 clap = "3.0.13"
+crossbeam = "0.8.1"
+ignore = "0.4.18"
 walkdir = "2.3.2"

@@ -1,5 +1,20 @@
 use clap::{arg, App};
-use walkdir::{DirEntry, WalkDir};
+use crossbeam::channel;
+use ignore::WalkBuilder;
+use std::io::{self, Write};
+use std::path::Path;
+use std::thread;
+enum DirEntry {
+    Y(ignore::DirEntry),
+}
+
+impl DirEntry {
+    fn path(&self) -> &Path {
+        match *self {
+            DirEntry::Y(ref y) => y.path(),
+        }
+    }
+}
 
 fn main() {
     let matches = App::new("walk")
@@ -9,6 +24,7 @@ fn main() {
         .arg(arg!([path] "Directories"))
         .arg(arg!(-d --dir "Only walk directories"))
         .arg(arg!(-f --file "Only walk files"))
+        .arg(arg!(-i --ignore "Exclude ignore file"))
         .get_matches();
 
     let dir = match matches.value_of("path") {
@@ -16,37 +32,59 @@ fn main() {
         _ => ".",
     };
 
-    if matches.is_present("dir") {
-        WalkDir::new(dir)
-            .into_iter()
-            .filter_entry(|e| !is_hidden(e))
-            .filter_map(|v| v.ok())
-            .filter(|item| item.path().is_dir())
-            .for_each(|entry| println!("{}", entry.path().display()));
-    }
+    let is_dir = matches.is_present("dir");
+    let ignore = matches.is_present("ignore");
 
-    if matches.is_present("file") {
-        walk_file(dir);
-    }
+    let (tx, rx) = channel::bounded::<DirEntry>(100);
+    let stdout_thread = thread::spawn(move || {
+        let mut stdout = io::BufWriter::new(io::stdout());
+        for dent in rx {
+            write_path(&mut stdout, dent.path(), is_dir);
+        }
+    });
 
-    // If option not present walk file as default!
-    walk_file(dir);
+    let walker = WalkBuilder::new(dir)
+        .standard_filters(ignore)
+        .threads(6)
+        .build_parallel();
+    walker.run(|| {
+        let tx = tx.clone();
+        Box::new(move |result| {
+            use ignore::WalkState::*;
+
+            tx.send(DirEntry::Y(result.unwrap())).unwrap();
+            Continue
+        })
+    });
+    drop(tx);
+    stdout_thread.join().unwrap();
 }
 
-fn walk_file(dir: &str) {
-    WalkDir::new(dir)
-        .into_iter()
-        .filter_entry(|e| !is_hidden(e))
-        .filter_map(|v| v.ok())
-        .filter(|item| item.path().is_file())
-        .for_each(|entry| println!("{}", entry.path().display()));
-    std::process::exit(0);
+#[cfg(unix)]
+fn write_path<W: Write>(mut wtr: W, path: &Path, is_dir: bool) {
+    use std::os::unix::ffi::OsStrExt;
+    if is_dir && path.is_dir() {
+        wtr.write(path.as_os_str().as_bytes()).unwrap();
+        wtr.write(b"\n").unwrap();
+        return;
+    }
+
+    if !is_dir && path.is_file() {
+        wtr.write(path.as_os_str().as_bytes()).unwrap();
+        wtr.write(b"\n").unwrap();
+    }
 }
 
-fn is_hidden(entry: &DirEntry) -> bool {
-    entry
-        .file_name()
-        .to_str()
-        .map(|s| s.starts_with(".git"))
-        .unwrap_or(false)
+#[cfg(not(unix))]
+fn write_path<W: Write>(mut wtr: W, path: &Path, is_dir: bool) {
+    if is_dir && path.is_dir() {
+        wtr.write(path.as_os_str().as_bytes()).unwrap();
+        wtr.write(b"\n").unwrap();
+        return;
+    }
+
+    if !is_dir && path.is_file() {
+        wtr.write(path.as_os_str().as_bytes()).unwrap();
+        wtr.write(b"\n").unwrap();
+    }
 }
