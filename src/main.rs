@@ -78,13 +78,13 @@ fn write_path<W: Write>(mut wtr: W, path: &Path, is_dir: bool) {
 #[cfg(not(unix))]
 fn write_path<W: Write>(mut wtr: W, path: &Path, is_dir: bool) {
     if is_dir && path.is_dir() {
-        wtr.write(path.as_os_str().as_bytes()).unwrap();
+        wtr.write(path.to_string_lossy().as_bytes()).unwrap();
         wtr.write(b"\n").unwrap();
         return;
     }
 
     if !is_dir && path.is_file() {
-        wtr.write(path.as_os_str().as_bytes()).unwrap();
+        wtr.write(path.to_string_lossy().as_bytes()).unwrap();
         wtr.write(b"\n").unwrap();
     }
 }
